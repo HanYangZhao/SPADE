@@ -92,4 +92,6 @@ dependencies:
   - pip:
     - pyqt5-sip==4.19.18
     - pyqtwebengine==5.12.1
+    - python-osc==1.7.4
 prefix: C:\Users\admin\miniconda3\envs\nvidia-spade
+
