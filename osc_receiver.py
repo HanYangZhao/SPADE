@@ -20,20 +20,29 @@ model = None
 opt = None
 client = None
 model = None
+first_run = True
 
 def osc_image_handler(unused_addr, args, img_path):
+
+    
     generated_image_path = process(img_path)
     client.send_message(opt.osc_channel, generated_image_path)
 
 def process(img_path):
     start_time = time.time()
     global opt
+    global model
+    global first_run
     img = Image.open(img_path)
     width, height = img.size
     opt.load_size = width
     opt.crop_size = width
     opt.aspect_ratio = width / height
 
+    if(first_run):
+        model = Pix2PixModel(opt)
+        model.eval()
+        first_run = False
     #Loading Semantic Label
     label = Image.open(img_path)
     label = ImageOps.grayscale(label)
@@ -64,7 +73,6 @@ def process(img_path):
 
 def main():
     global opt
-    global model
     global client
     #Loading the trained model
     opt = TestOptions().parse()
@@ -72,8 +80,7 @@ def main():
     if opt.dataset_mode == "coco":
         opt.label_nc = 183
 
-    model = Pix2PixModel(opt)
-    model.eval()
+ 
 
     dispatcher = d.Dispatcher()
     dispatcher.map(opt.osc_channel, osc_image_handler, "path")
