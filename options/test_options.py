@@ -13,6 +13,13 @@ class TestOptions(BaseOptions):
         parser.add_argument('--which_epoch', type=str, default='latest', help='which epoch to load? set to latest to use latest cached model')
         parser.add_argument('--how_many', type=int, default=float("inf"), help='how many test images to run')
 
+
+        parser.add_argument("--osc_send_ip", default="127.0.0.1", help="The ip of the OSC sender")
+        parser.add_argument("--osc_send_port", type=int, default=5005, help="The port the OSC server is sending from")
+
+        parser.add_argument("--osc_receive_port", type=int, default=5006, help="The port the OSC is receiving from")
+        parser.add_argument("--osc_channel", type=str, default="/spadeGAN", help="The channel of OSC")
+        
         parser.set_defaults(preprocess_mode='scale_width_and_crop', crop_size=256, load_size=256, display_winsize=1024)
         parser.set_defaults(serial_batches=True)
         parser.set_defaults(no_flip=True)
