@@ -3,7 +3,7 @@
 import os
 import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image,ImageOps
 from collections import OrderedDict
 import importlib
 import data
@@ -45,8 +45,10 @@ def main():
     if opt.dataset_mode == "coco":
         opt.label_nc = 183
 
-    img = cv2.imread(opt.test_file_path)
-    height, width = img.shape[:2]
+
+    # img = cv2.imread(opt.test_file_path)
+    img = Image.open(opt.test_file_path)
+    width, height = img.size
     opt.load_size = width
     opt.crop_size = width
     opt.aspect_ratio = width / height
@@ -56,6 +58,7 @@ def main():
 
     #Loading Semantic Label
     label = Image.open(opt.test_file_path)
+    label = ImageOps.grayscale(label)
     params = get_params(opt, label.size)
     transform_label = get_transform(opt, params, method=Image.NEAREST, normalize=False)
     label_tensor = transform_label(label) * 255.0
