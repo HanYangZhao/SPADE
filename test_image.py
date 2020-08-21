@@ -80,7 +80,7 @@ def main():
         generated_image_path_ = opt.output_dir + '/' + os.path.splitext(os.path.basename(opt.test_file_path))[0] +"_generated"+".png"
         print('---- generated image ', generated_image_path_, np.shape(generated_image))
         im_rgb = cv2.cvtColor(generated_image, cv2.COLOR_BGR2RGB)
-        cv2.imwrite(generated_image_path_, generated_image)
+        cv2.imwrite(generated_image_path_, im_rgb)
     print("Time to generate image: " + str(time.time() - start_time))
 if __name__ == '__main__':
     main()
