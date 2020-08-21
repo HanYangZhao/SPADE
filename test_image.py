@@ -13,6 +13,7 @@ from options.test_options import TestOptions
 from models.pix2pix_model import Pix2PixModel
 from data.base_dataset import BaseDataset, get_params, get_transform
 import argparse
+import time
 
 def find_dataset_using_name(dataset_name):
     # Given the option --dataset [datasetname],
@@ -55,10 +56,9 @@ def main():
     # print(opt)
     model = Pix2PixModel(opt)
     model.eval()
-
+    start_time = time.time()
     #Loading Semantic Label
-    label = Image.open(opt.test_file_path)
-    label = ImageOps.grayscale(label)
+    label = ImageOps.grayscale(img)
     params = get_params(opt, label.size)
     transform_label = get_transform(opt, params, method=Image.NEAREST, normalize=False)
     label_tensor = transform_label(label) * 255.0
@@ -80,7 +80,7 @@ def main():
         generated_image_path_ = opt.output_dir + '/' + os.path.splitext(os.path.basename(opt.test_file_path))[0] +"_generated"+".png"
         print('---- generated image ', generated_image_path_, np.shape(generated_image))
         im_rgb = cv2.cvtColor(generated_image, cv2.COLOR_BGR2RGB)
-        cv2.imwrite(generated_image_path_, im_rgb)
-
+        cv2.imwrite(generated_image_path_, generated_image)
+    print("Time to generate image: " + str(time.time() - start_time))
 if __name__ == '__main__':
     main()
