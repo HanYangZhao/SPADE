@@ -1,7 +1,7 @@
 #!/bin/bash
 
 conda env create -f conda_env.yml
-
+conda activate nvidia-spade
 mkdir -p checkpoints
 gdown 'https://drive.google.com/u/0/uc?export=download&confirm=TM7u&id=12gvlTbMvUcJewQlSEaZdeb2CdOB-b8kQ'
 tar xvf checkpoints.tar.gz -C checkpoints
