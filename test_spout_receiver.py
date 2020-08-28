@@ -23,8 +23,7 @@ class SpoutOptions(BaseOptions):
                                     help='Width and height of the spout receiver')
         parser.add_argument('--spout_in', type=str, default='spout_receiver_in',
                                     help='Spout receiving name - the name of the sender you want to receive')
-        parser.add_argument('--spout_out', type=str, default='spout_receiver_out',
-                                    help='Spout receiving name - the name of the sender you want to send')
+        parser.add_argument('--spout_out', type=str, nargs='+',default='spout_receiver_out', help='the names of the channels you want to send, quoted and seperated by space')
         parser.add_argument('--window_size', nargs = 2, type=int, default=[10, 10],
                                     help='Width and height of the window')
         parser.set_defaults(preprocess_mode='scale_width_and_crop', crop_size=256, load_size=256, display_winsize=1024)
@@ -60,6 +59,7 @@ def unsharp_mask(image, kernel_size=(5, 5), sigma=1.0, amount=1.5, threshold=0):
 
 def main():
     opt = SpoutOptions().parse()
+    opt.spout_out = [str(item)for item in opt.spout_out.split(' ')]
     opt.no_instance = True
     if opt.dataset_mode == "coco":
         opt.label_nc = 183
@@ -76,7 +76,7 @@ def main():
     model = Pix2PixModel(opt)
     model.eval()
     prev_frame = None
-    while cv2.waitKey(1) != 27:
+    while sro.receiving:
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
         frame = sro.GetSpoutFrame(opt.spout_in)
@@ -106,6 +106,7 @@ def main():
         data_i['instance'] = None
 
         #Inference code
+        start_time = time.time()
         generated = model(data_i, mode='inference')
         for b in range(generated.shape[0]):
             generated_image = generated[b]
@@ -113,9 +114,14 @@ def main():
             im_rgb = cv2.cvtColor(generated_image, cv2.COLOR_BGR2RGB)
             im_rgb = cv2.resize(im_rgb, (opt.spout_size[0],opt.spout_size[1]), interpolation = cv2.INTER_LANCZOS4) 
             im_rgb = unsharp_mask(im_rgb)
-            cv2.imshow("Generated", im_rgb)
             if opt.spout_out:
                 sro.SendSpoutFrame(im_rgb, opt)
+            cv2.putText(im_rgb, "fps: " + str(int(1.0 / (time.time() - start_time))),
+            (int(frame.shape[1] / 2 - 50), frame.shape[0]),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            cv2.imshow("Generated", im_rgb)
+    print("Error : no image received")
+    os._exit(1)
 
 if __name__ == '__main__':
     main()

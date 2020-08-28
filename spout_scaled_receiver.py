@@ -12,7 +12,7 @@ from models.pix2pix_model import Pix2PixModel
 from data.base_dataset import BaseDataset, get_params, get_transform
 import argparse
 import time
-import spout as sro
+from spout import Spout
 from options.test_options import BaseOptions
 import queue
 import threading
@@ -21,13 +21,20 @@ import torch
 from torchvision import transforms
 from torchvision import utils
 import copy
+import socket   
+
+from torch.autograd import Variable
+from torchvision import transforms
+
+from u2net.model import U2NET # full size version 173.6 MB
+from u2net.model import U2NETP # small version u2net 4.7 MB
+
 
 # from Waifu2x.utils.prepare_images import *
 # from Waifu2x.Models import *
 
-process_queue = queue.Queue()
-scaled_image_queue = queue.Queue()
-isExit = False
+
+
 
 class SpoutOptions(BaseOptions):
     def initialize(self, parser):
@@ -37,8 +44,10 @@ class SpoutOptions(BaseOptions):
                                     default=[256, 256], help='Width and height of the spout receiver')
         parser.add_argument('--spout_in', type=str, default='spout_receiver_in',
                                     help='Spout receiving name - the name of the sender you want to receive')
-        parser.add_argument('--spout_out', type=str, default='spout_receiver_out',
-                                    help='Spout receiving name - the name of the sender you want to send')
+        parser.add_argument('--spout_out', type=str, nargs='+',default='spout_receiver_out', help='the names of the channel you want to send the output')
+        parser.add_argument('--spout_mask_out',type=str)
+        parser.add_argument('--mask_substract',action='store_true')
+        parser.add_argument('--mask_trained_model', default='u2net', type=str, help='Model to load')
         parser.add_argument('--window_size', nargs = 2, type=int, default=[10, 10],
                                     help='Width and height of the window')
         parser.set_defaults(preprocess_mode='scale_width_and_crop', crop_size=256, load_size=256, display_winsize=1024)
@@ -50,6 +59,7 @@ class SpoutOptions(BaseOptions):
         parser.add_argument('--which_epoch', type=str, default='latest', help='which epoch to load? set to latest to use latest cached model')
         # parser.add_argument('--scale', type=int, default='1',help='scale the output image by n factor. The final resolution should match the spout_size')
         parser.add_argument('--denoise', type=int, default='1',help='denoise image during scaling')
+
         self.isTrain = False
         return parser
 
@@ -63,9 +73,7 @@ def tensor_to_image(tensor, nrow=8, padding=2,
     im = Image.fromarray(ndarr)
     return im
 
-def image_scaler(denoise,scale):
-    global process_queue
-    global scaled_image_queue
+def image_scaler(denoise,scale,process_queue,scaled_image_queue,isExit):
     denoise_flag =  str(denoise)
     input_file = "generated.png"
     output_file = "scaled.png"
@@ -125,12 +133,58 @@ def is_same_image(prev_frame,current_frame):
         return True
     return False
 
+# normalize the predicted SOD probability map
+def normPRED(d):
+    ma = torch.max(d)
+    mi = torch.min(d)
+
+    dn = (d-mi)/(ma-mi)
+
+    return dn
+
+def mask_generator(frame,device,net,opt):
+    content_transform = transforms.Compose([
+        transforms.ToTensor()
+    ])
+    start_time = time.time()
+    resized = cv2.resize(frame, (320, 320), interpolation=cv2.INTER_LANCZOS4)
+    norm_image = cv2.normalize(resized, None, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
+    inputs_test = content_transform(norm_image)
+    inputs_test = inputs_test.unsqueeze(0).to(device)
+
+    if torch.cuda.is_available():
+        inputs_test = Variable(inputs_test.cuda())
+    else:
+        inputs_test = Variable(inputs_test)
+
+    d1,d2,d3,d4,d5,d6,d7= net(inputs_test)
+
+    # normalization
+    pred = d1[:,0,:,:]
+    pred = normPRED(pred)
+
+    mask = pred
+    mask = mask.squeeze()
+    mask_np = mask.cpu().data.numpy()
+    im = Image.fromarray(mask_np * 255).convert('RGB')
+    imr = im.resize((frame.shape[1], frame.shape[0]), resample=Image.LANCZOS)
+
+    open_cv_image = np.array(imr)
+
+    print("Image masked in %.3f seconds!" % (time.time() - start_time))
+    return open_cv_image
+
 def main():
-    global process_queue
-    global scaled_image_queue
-    global isExit
+    process_queue = queue.Queue()
+    scaled_image_queue = queue.Queue()
+    isExit = False
     t = None
+
+    #argument parsing
     opt = SpoutOptions().parse()
+    opt.spout_out = [str(item)for item in opt.spout_out.split(' ')]
+    if opt.spout_mask_out:
+        opt.spout_out.append(opt.spout_mask_out)
     opt.no_instance = True
     if opt.dataset_mode == "coco":
         opt.label_nc = 183
@@ -139,18 +193,43 @@ def main():
     if opt.name == "landscape":
         opt.load_size = 512
         opt.crop_size = 512
-    sro.InitSpout(opt)
+    
+    #start spout
+    sro = Spout(opt)
 
+    #load model for spade
     model = Pix2PixModel(opt)
     model.eval()
 
+    #start threading for scaling if neccesary
     scaling_ratio = int(opt.spout_size[0] / opt.load_size)
     print("scaling_ratio : " + str(scaling_ratio))
     if(scaling_ratio > 1):
-        t = threading.Thread(target=image_scaler,args=(opt.denoise,scaling_ratio))
+        t = threading.Thread(target=image_scaler,args=(opt.denoise,scaling_ratio,process_queue,scaled_image_queue,isExit))
         t.start()
+    
+    #load model for masking
+    if opt.spout_mask_out:
+        # --------- 1. get image path and name ---------
+        mask_model_name = opt.mask_trained_model
+        mask_model_dir = './u2net/saved_models/' + mask_model_name + '/' + mask_model_name + '.pth'
+
+        # --------- 3. model define ---------
+        if(mask_model_name=='u2net'):
+            print("...load U2NET---173.6 MB")
+            mask_net = U2NET(3,1)
+        elif(mask_model_name=='u2netp'):
+            print("...load U2NEP---4.7 MB")
+            mask_net = U2NETP(3,1)
+        mask_net.load_state_dict(torch.load(mask_model_dir))
+        if torch.cuda.is_available():
+            mask_device = torch.device("cuda")
+            mask_net.cuda()
+        mask_net.eval()
+
+    #process incoming frames from spout
     prev_frame = None
-    while cv2.waitKey(1) != 27:
+    while True:
         if cv2.waitKey(1) & 0xFF == ord('q'):
             os._exit(1)
         frame = sro.GetSpoutFrame(opt.spout_in)
@@ -184,13 +263,30 @@ def main():
             generated_image = generated[b]
             generated_image = util.tensor2im(generated_image)
             im_rgb = cv2.cvtColor(generated_image, cv2.COLOR_BGR2RGB)
-            print("Image generated in %.3f seconds!" % (time.time() - start_time))
+            print("Image generated in %.3f seconds!" % (time.time() - start_time))              
             if(scaling_ratio > 1):
                 process_queue.put(im_rgb)
                 im_rgb = scaled_image_queue.get()
+            cv2_display_frame = im_rgb
             if opt.spout_out:
-                sro.SendSpoutFrame(im_rgb, opt)
-            cv2.imshow("Generated", im_rgb)
+                if opt.spout_mask_out:
+                    mask = mask_generator(im_rgb,mask_device,mask_net,opt)
+                    sro.SendSpoutFrame([im_rgb,mask], opt)
+                    if(opt.mask_substract):
+                        mask = cv2.bitwise_and(im_rgb, mask)
+                    cv2_display_frame = np.hstack((im_rgb, mask))
+                else:
+                    sro.SendSpoutFrame([im_rgb], opt)
+            cv2.putText(cv2_display_frame, "fps: " + str(int(1.0 / (time.time() - start_time))),
+                        (int(frame.shape[1] / 2 - 50), frame.shape[0]),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            cv2.imshow("Generated", cv2_display_frame)
+                
+
+
+            
+    print("Error : no image received")
+    os._exit(1)
 if __name__ == '__main__':
     main()
 
