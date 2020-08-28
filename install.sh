@@ -23,10 +23,10 @@ mv srmd-ncnn-vulkan-20200818-windows/* .
 # git clone the repo
 # rename the repo to u2net
 # download the two model files from google drive
-# Create directory U-2-Net/saved_models/u2net/ 
-# Create directory U-2-Net/saved_models/u2netp/
-# move u2net.pth to U-2-Net/saved_models/u2net/
-# move u2netp.pth to U-2-Net/saved_models/u2net/
+# Create directory u2net/saved_models/u2net/ 
+# Create directory u2net/saved_models/u2netp/
+# move u2net.pth to u2net/saved_models/u2net/
+# move u2netp.pth to u2net/saved_models/u2net/
 git clone https://github.com/NathanUA/U-2-Net
 mv U-2-Net u2net
 gdown 'https://drive.google.com/u/1/uc?export=download&confirm=Mvjq&id=1ao1ovG1Qtx4b7EoskHXmi2E9rp5CHLcZ'
