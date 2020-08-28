@@ -33,9 +33,6 @@ from u2net.model import U2NETP # small version u2net 4.7 MB
 # from Waifu2x.utils.prepare_images import *
 # from Waifu2x.Models import *
 
-
-
-
 class SpoutOptions(BaseOptions):
     def initialize(self, parser):
         BaseOptions.initialize(self, parser)
@@ -57,7 +54,7 @@ class SpoutOptions(BaseOptions):
         parser.add_argument('--output_dir', type=str, default='results',
                             help='Directory name to save the generated images')
         parser.add_argument('--which_epoch', type=str, default='latest', help='which epoch to load? set to latest to use latest cached model')
-        # parser.add_argument('--scale', type=int, default='1',help='scale the output image by n factor. The final resolution should match the spout_size')
+        parser.add_argument('--ml_scaling', action='store_true', help='enable image scaling with machine learning')
         parser.add_argument('--denoise', type=int, default='1',help='denoise image during scaling')
 
         self.isTrain = False
@@ -124,6 +121,18 @@ def image_scaler(denoise,scale,process_queue,scaled_image_queue,isExit):
         else:
             scaled_image_queue.put(scaled_image)
             # os.remove(output_file)
+
+def unsharp_mask(image, kernel_size=(5, 5), sigma=1.0, amount=1.5, threshold=0):
+    """Return a sharpened version of the image, using an unsharp mask."""
+    blurred = cv2.GaussianBlur(image, kernel_size, sigma)
+    sharpened = float(amount + 1) * image - float(amount) * blurred
+    sharpened = np.maximum(sharpened, np.zeros(sharpened.shape))
+    sharpened = np.minimum(sharpened, 255 * np.ones(sharpened.shape))
+    sharpened = sharpened.round().astype(np.uint8)
+    if threshold > 0:
+        low_contrast_mask = np.absolute(image - blurred) < threshold
+        np.copyto(sharpened, image, where=low_contrast_mask)
+    return sharpened
 
 def is_same_image(prev_frame,current_frame):
     if prev_frame is None:
@@ -203,8 +212,8 @@ def main():
 
     #start threading for scaling if neccesary
     scaling_ratio = int(opt.spout_size[0] / opt.load_size)
-    print("scaling_ratio : " + str(scaling_ratio))
-    if(scaling_ratio > 1):
+    if(scaling_ratio > 1 and opt.ml_scaling):
+        print("ml scaling enabled, scaling_ratio : " + str(scaling_ratio))
         t = threading.Thread(target=image_scaler,args=(opt.denoise,scaling_ratio,process_queue,scaled_image_queue,isExit))
         t.start()
     
@@ -264,9 +273,12 @@ def main():
             generated_image = util.tensor2im(generated_image)
             im_rgb = cv2.cvtColor(generated_image, cv2.COLOR_BGR2RGB)
             print("Image generated in %.3f seconds!" % (time.time() - start_time))              
-            if(scaling_ratio > 1):
+            if(opt.ml_scaling):
                 process_queue.put(im_rgb)
                 im_rgb = scaled_image_queue.get()
+            else:
+                im_rgb = cv2.resize(im_rgb, (opt.spout_size[0],opt.spout_size[1]), interpolation = cv2.INTER_LANCZOS4) 
+                im_rgb = unsharp_mask(im_rgb)
             cv2_display_frame = im_rgb
             if opt.spout_out:
                 if opt.spout_mask_out:
