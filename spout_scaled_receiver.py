@@ -106,7 +106,7 @@ def image_scaler(denoise,scale):
             scale = 4
             # print("the commandline is {}".format(proc.args))
         proc = subprocess.run([command,"-i",output_file,"-o",output_file,"-n",denoise_flag,"-s",str(scale)],stdout=subprocess.DEVNULL,shell=True)
-        # print("the commandline is {}".format(proc.args))
+        print("the commandline is {}".format(proc.args))
         print("Image scaling in %.3f seconds!" % (time.time() - start_time))
         scaled_image = cv2.imread(output_file)
         print(scaled_image.shape[:2])
@@ -136,7 +136,7 @@ def main():
         opt.label_nc = 183
         opt.load_size = 256
         opt.crop_size = 256
-    if opt.dataset_mode == "landscape":
+    if opt.name == "landscape":
         opt.load_size = 512
         opt.crop_size = 512
     sro.InitSpout(opt)
@@ -159,11 +159,11 @@ def main():
             os._exit(1)
         # if is_same_image(frame,prev_frame):
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        if(opt.spout_size[0] != opt.crop_size):
-            frame = cv2.resize(frame, (opt.crop_size,opt.crop_size), interpolation = cv2.INTER_LANCZOS4)
         if is_same_image(prev_frame,frame):
             continue
         prev_frame = frame
+        if(opt.spout_size[0] != opt.crop_size):
+            frame = cv2.resize(frame, (opt.crop_size,opt.crop_size), interpolation = cv2.INTER_LANCZOS4)
         label = Image.fromarray(frame)
         params = get_params(opt, label.size)
         transform_label = get_transform(opt, params, method=Image.NEAREST, normalize=False)

@@ -37,6 +37,26 @@ class SpoutOptions(BaseOptions):
         self.isTrain = False
         return parser
 
+def is_same_image(prev_frame,current_frame):
+    if prev_frame is None:
+        return False
+    difference = cv2.subtract(prev_frame,current_frame)
+    if cv2.countNonZero(difference) == 0:
+        return True
+    return False
+
+def unsharp_mask(image, kernel_size=(5, 5), sigma=1.0, amount=1.5, threshold=0):
+    """Return a sharpened version of the image, using an unsharp mask."""
+    blurred = cv2.GaussianBlur(image, kernel_size, sigma)
+    sharpened = float(amount + 1) * image - float(amount) * blurred
+    sharpened = np.maximum(sharpened, np.zeros(sharpened.shape))
+    sharpened = np.minimum(sharpened, 255 * np.ones(sharpened.shape))
+    sharpened = sharpened.round().astype(np.uint8)
+    if threshold > 0:
+        low_contrast_mask = np.absolute(image - blurred) < threshold
+        np.copyto(sharpened, image, where=low_contrast_mask)
+    return sharpened
+
 
 def main():
     opt = SpoutOptions().parse()
@@ -45,7 +65,7 @@ def main():
         opt.label_nc = 183
         opt.load_size = 256
         opt.crop_size = 256
-    if opt.dataset_mode == "landscape":
+    if opt.name == "landscape":
         opt.load_size = 512
         opt.crop_size = 512
     sro.InitSpout(opt)
@@ -55,7 +75,7 @@ def main():
     # opt.crop_size = width
     model = Pix2PixModel(opt)
     model.eval()
-
+    prev_frame = None
     while cv2.waitKey(1) != 27:
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
@@ -65,10 +85,14 @@ def main():
             break
         # image = Image.fromarray(frame)
         # label = ImageOps.grayscale(image)
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        if is_same_image(prev_frame,frame):
+            continue
+        prev_frame = frame
         if(opt.spout_size[0] != opt.crop_size):
-            label = cv2.resize(gray, (opt.crop_size,opt.crop_size), interpolation = cv2.INTER_LANCZOS4)
-        label = Image.fromarray(label)
+                print("resizing input")
+                frame = cv2.resize(frame, (opt.crop_size,opt.crop_size), interpolation = cv2.INTER_LANCZOS4)
+        label = Image.fromarray(frame)
         params = get_params(opt, label.size)
         transform_label = get_transform(opt, params, method=Image.NEAREST, normalize=False)
         label_tensor = transform_label(label) * 255.0
@@ -88,6 +112,7 @@ def main():
             generated_image = util.tensor2im(generated_image)
             im_rgb = cv2.cvtColor(generated_image, cv2.COLOR_BGR2RGB)
             im_rgb = cv2.resize(im_rgb, (opt.spout_size[0],opt.spout_size[1]), interpolation = cv2.INTER_LANCZOS4) 
+            im_rgb = unsharp_mask(im_rgb)
             cv2.imshow("Generated", im_rgb)
             if opt.spout_out:
                 sro.SendSpoutFrame(im_rgb, opt)
