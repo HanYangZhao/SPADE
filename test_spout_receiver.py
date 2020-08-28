@@ -43,11 +43,16 @@ def main():
     opt.no_instance = True
     if opt.dataset_mode == "coco":
         opt.label_nc = 183
+        opt.load_size = 256
+        opt.crop_size = 256
+    if opt.dataset_mode == "landscape":
+        opt.load_size = 512
+        opt.crop_size = 512
     sro.InitSpout(opt)
 
-    width, height = opt.spout_size
-    opt.load_size = width
-    opt.crop_size = width
+    # width, height = opt.spout_size
+    # opt.load_size = width
+    # opt.crop_size = width
     model = Pix2PixModel(opt)
     model.eval()
 
@@ -58,9 +63,12 @@ def main():
         if frame is None:
             print("Error : no image received")
             break
-        image = Image.fromarray(frame)
-        label = ImageOps.grayscale(image)
-
+        # image = Image.fromarray(frame)
+        # label = ImageOps.grayscale(image)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        if(opt.spout_size[0] != opt.crop_size):
+            label = cv2.resize(gray, (opt.crop_size,opt.crop_size), interpolation = cv2.INTER_LANCZOS4)
+        label = Image.fromarray(label)
         params = get_params(opt, label.size)
         transform_label = get_transform(opt, params, method=Image.NEAREST, normalize=False)
         label_tensor = transform_label(label) * 255.0
@@ -79,6 +87,7 @@ def main():
             generated_image = generated[b]
             generated_image = util.tensor2im(generated_image)
             im_rgb = cv2.cvtColor(generated_image, cv2.COLOR_BGR2RGB)
+            im_rgb = cv2.resize(im_rgb, (opt.spout_size[0],opt.spout_size[1]), interpolation = cv2.INTER_LANCZOS4) 
             cv2.imshow("Generated", im_rgb)
             if opt.spout_out:
                 sro.SendSpoutFrame(im_rgb, opt)

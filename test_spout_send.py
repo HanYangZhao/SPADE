@@ -10,7 +10,7 @@ import time
 def parse_args():
     desc = "Spout for Python texture receiving example"
     parser = argparse.ArgumentParser(description=desc)
-    parser.add_argument('--spout_size', nargs = 2, type=int, default=[256, 256], help='Width and height of the spout receiver')
+    parser.add_argument('--spout_size', nargs = 2, type=int, choices=[256,512,1024,2048],default=[256, 256], help='Width and height of the spout receiver')
     parser.add_argument('--spout_in', type=str, default='spout_sender_in', help='Spout receiving name - the name of the sender you want to receive')
     parser.add_argument('--spout_out', type=str, default='spout_receiver_in', help='Spout receiving name - the name of the sender you want to receive')
     parser.add_argument('--window_size', nargs = 2, type=int, default=[10, 10], help='Width and height of the window')
